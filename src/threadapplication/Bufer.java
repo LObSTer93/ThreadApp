@@ -10,6 +10,9 @@ public class Bufer {
      * Заполнен после чтения и пуст после записи
      */
     private boolean isFull=false;
+    public void setIsFull(boolean isFull){
+        this.isFull=isFull;
+    }
     
     //Наполнение буфера
     private Container container;
@@ -33,13 +36,13 @@ public class Bufer {
         if(length!=-1){
             System.arraycopy(bufer, 0, container.getBufer(), 0, length);
             container.setLength(length);
+            mainForm.setBuferContent(bufer);
         }else{
             container=null;
         }
         //потоку записи пора писать
         notifyAll();
     }
-    
     /**
      * Возвращает наполнение буфера
      * @return - буфер
@@ -56,6 +59,7 @@ public class Bufer {
             }
         }
         isFull=false;
+        mainForm.setBuferContent(null);
         //потоку чтения пора читать
         notifyAll();
         if(container==null){
@@ -64,11 +68,15 @@ public class Bufer {
         return container.newInstance();
     }
     
+    private final MainForm mainForm;
+    
     /**
      * Конструктор
+     * @param mainForm - главная форма
      * @param buferSize - размер буфера в байтах
      */
-    public Bufer(int buferSize){
+    public Bufer(MainForm mainForm, int buferSize){
+        this.mainForm=mainForm;
         container=new Container(buferSize);
     }
 }

@@ -1,6 +1,7 @@
 package threadapplication;
 
 import java.io.File;
+import java.io.UnsupportedEncodingException;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JOptionPane;
@@ -24,6 +25,19 @@ public class MainForm extends JFrame {
     
     //Работает ли сейчас программа
     private boolean isWrite=false;
+    
+    //Поддерживается ли кодировка "cp1251" системой
+    private boolean isCharset=true;
+    /**
+     * Произошла ли I/O ошибка
+     */
+    private volatile boolean isIOEx=false;
+    public boolean isIOEx(){
+        return isIOEx;
+    }
+    public void setIsIOEx(){
+        this.isIOEx=true;
+    }
     
     /**
      * Creates new form MainForm
@@ -52,6 +66,7 @@ public class MainForm extends JFrame {
         startButton = new javax.swing.JButton();
         readButton = new javax.swing.JButton();
         writeButton = new javax.swing.JButton();
+        buferContent = new javax.swing.JTextField();
 
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
 
@@ -90,6 +105,11 @@ public class MainForm extends JFrame {
         writeButton.setToolTipText("Нельзя управлять потоками, пока не начата запись");
         writeButton.setEnabled(false);
 
+        buferContent.setEditable(false);
+        buferContent.setText("Содержимое буфера");
+        buferContent.setToolTipText("Здесь отображается наполнение буфера во время работы программы");
+        buferContent.setEnabled(false);
+
         javax.swing.GroupLayout layout = new javax.swing.GroupLayout(getContentPane());
         getContentPane().setLayout(layout);
         layout.setHorizontalGroup(
@@ -99,9 +119,12 @@ public class MainForm extends JFrame {
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                     .addComponent(buttonIn)
                     .addComponent(buttonOut)
-                    .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING, false)
-                        .addComponent(buferSizeTxt, javax.swing.GroupLayout.Alignment.LEADING)
-                        .addComponent(jLabel1, javax.swing.GroupLayout.Alignment.LEADING, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
+                    .addGroup(layout.createSequentialGroup()
+                        .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING, false)
+                            .addComponent(buferSizeTxt, javax.swing.GroupLayout.Alignment.LEADING)
+                            .addComponent(jLabel1, javax.swing.GroupLayout.Alignment.LEADING, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
+                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                        .addComponent(buferContent, javax.swing.GroupLayout.PREFERRED_SIZE, 182, javax.swing.GroupLayout.PREFERRED_SIZE))
                     .addComponent(startButton)
                     .addGroup(layout.createSequentialGroup()
                         .addComponent(readButton)
@@ -119,7 +142,9 @@ public class MainForm extends JFrame {
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addComponent(jLabel1)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                .addComponent(buferSizeTxt, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(buferSizeTxt, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                    .addComponent(buferContent, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addComponent(startButton)
                 .addGap(89, 89, 89)
@@ -157,13 +182,10 @@ public class MainForm extends JFrame {
     private void startButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_startButtonActionPerformed
         changeMode();
         if(isWrite){
-            Bufer bufer=new Bufer(getBuferSize());
+            Bufer bufer=new Bufer(this, getBuferSize());
             
-            readThread=new ReadThread(this);
-            writeThread=new WriteThread(this);
-            
-            readThread.init(bufer, fileIn);
-            writeThread.init(bufer, fileOut);
+            readThread=new ReadThread(this, bufer, fileIn);
+            writeThread=new WriteThread(this, bufer, fileOut);
             
             readThread.start();
             writeThread.start();
@@ -203,19 +225,46 @@ public class MainForm extends JFrame {
         }
         /**
          * Потоками чтения и записи можем управлять только при работающей программе
-         * Буфер можем задавать только при неработающей программе
          */
         readButton.setEnabled(isWrite);
         writeButton.setEnabled(isWrite);
+        //Буфер можем задавать только при неработающей программе
         buferSizeTxt.setEnabled(!isWrite);
+        
+        buferContent.setEnabled(isWrite);
+        buferContent.setText("Содержимое буфера");
     }
     
     /**
      * Запись окончена
      */
     public void finish(){
-        JOptionPane.showMessageDialog(this, "Финиш");
+        if(isIOEx){
+            JOptionPane.showMessageDialog(this, "Программа завершена со сбоем!");
+        }else{
+            JOptionPane.showMessageDialog(this, "Программа завершена успешно!");
+        }
         changeMode();
+    }
+    
+    /**
+     * Отображает текущее наполнение буфера
+     * @param b - массив байт, находящихся в буфере
+     */
+    public synchronized void setBuferContent(byte[] b){
+        if(!isCharset){
+            return;
+        }
+        if(b==null){
+            buferContent.setText("");
+            return;
+        }
+        try{
+            buferContent.setText(new String(b, "cp1251"));
+        }catch(UnsupportedEncodingException ex){
+            JOptionPane.showMessageDialog(this, "Cистемой не поддерживается кодировка \"cp1251\". Содержимое буфера не может быть выведено.");
+            isCharset=false;
+        }
     }
     
     /**
@@ -229,6 +278,7 @@ public class MainForm extends JFrame {
     }
 
     // Variables declaration - do not modify//GEN-BEGIN:variables
+    private javax.swing.JTextField buferContent;
     private javax.swing.JTextField buferSizeTxt;
     private javax.swing.JButton buttonIn;
     private javax.swing.JButton buttonOut;

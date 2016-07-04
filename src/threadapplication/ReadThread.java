@@ -12,32 +12,26 @@ import javax.swing.JOptionPane;
 public class ReadThread extends Thread{
 
     //буфер
-    private Bufer bufer;
+    private final Bufer bufer;
 
     //главная форма
     private final MainForm mainForm;
 
     //Файл для чтения
-    private File fileIn;
+    private final File fileIn;
 
     //собственный буфер потока. Из него потом сливаем в общий буфер
-    private byte[] byteBufer;
+    private final byte[] byteBufer;
     
     /**
      * Конструктор
      * @param mainForm - главная форма
-     */
-    public ReadThread(MainForm mainForm){
-        super("ReadThread");
-        this.mainForm=mainForm;
-    }
-    
-    /**
-     * Инициализация потока
      * @param bufer - буфер
      * @param fileIn - Файл для чтения
      */
-    public void init(Bufer bufer, File fileIn){
+    public ReadThread(MainForm mainForm, Bufer bufer, File fileIn){
+        super("ReadThread");
+        this.mainForm=mainForm;
         this.bufer=bufer;
         this.fileIn=fileIn;
         byteBufer=new byte[mainForm.getBuferSize()];
@@ -50,14 +44,22 @@ public class ReadThread extends Thread{
                 FileInputStream is=new FileInputStream(fileIn);
             ){
                 int length;
-                while ((length = is.read(byteBufer)) > 0) {
+                while (((length = is.read(byteBufer))>0) && !mainForm.isIOEx()) {
                     bufer.setContainer(byteBufer, length);
                 }
-                bufer.setContainer(null, -1);
+                if(mainForm.isIOEx()){
+                    mainForm.finish();
+                }else{
+                    bufer.setContainer(null, -1);
+                }
             }
         }catch(IOException ex){
-            JOptionPane.showMessageDialog(mainForm, "Сбой при чтении файла");
-            throw new RuntimeException(ex);
+            JOptionPane.showMessageDialog(mainForm, "Сбой при чтении файла!");
+            mainForm.setIsIOEx();
+            synchronized(bufer){
+                bufer.setIsFull(true);
+                bufer.notifyAll();
+            }
         }
     }
 }
