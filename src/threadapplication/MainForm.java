@@ -20,8 +20,8 @@ public class MainForm extends JFrame {
     /**
      * Потоки исполнения чтения и записи
      */
-    private ReadThread readThread=null;
-    private WriteThread writeThread=null;
+    private ReadThread readThread;
+    private WriteThread writeThread;
     
     //Работает ли сейчас программа
     private boolean isWrite=false;
@@ -29,25 +29,59 @@ public class MainForm extends JFrame {
     //Поддерживается ли кодировка "cp1251" системой
     private boolean isCharset=true;
     /**
-     * Произошла ли I/O ошибка
+     * Произошла ли ошибка
      */
-    private volatile boolean isIOEx=false;
-    public boolean isIOEx(){
-        return isIOEx;
+    private volatile boolean isError=false;
+    public boolean isError(){
+        return isError;
     }
-    public void setIsIOEx(){
-        this.isIOEx=true;
+    public void setIsError(boolean isRead, Exception e){
+        this.isError=true;
+        System.out.println(e.toString());
+        /**
+         * При возникновении исключений в одном из потоков, 
+         *      нужно, чтобы второй поток прекратил работу
+         */
+        synchronized(bufer){
+            bufer.setIsFull(isRead);
+            bufer.notifyAll();
+        }
     }
+    /**
+     * Остановлен ли поток чтения
+     */
+    private volatile boolean stopRead;
+    public boolean getStopRead(){
+        return stopRead;
+    }
+    /**
+     * Остановлен ли поток записи
+     */
+    private volatile boolean stopWrite;
+    public boolean getStopWrite(){
+        return stopWrite;
+    }
+    
+    //буфер
+    private Bufer bufer;
     
     /**
      * Creates new form MainForm
      */
     public MainForm() {
         initComponents();
+        
         File workingDirectory = new File(System.getProperty("user.dir"));
         fileChooser.setCurrentDirectory(workingDirectory);
+        
         fileIn = new File(System.getProperty("user.dir")+"\\In.txt");
         fileOut = new File(System.getProperty("user.dir")+"\\Out.txt");
+        
+        readFileName.setVisible(false);
+        writeFileName.setVisible(false);
+        
+        readStatus.setVisible(false);
+        writeStatus.setVisible(false);
     }
     
     /**
@@ -67,10 +101,15 @@ public class MainForm extends JFrame {
         readButton = new javax.swing.JButton();
         writeButton = new javax.swing.JButton();
         buferContent = new javax.swing.JTextField();
+        readFileName = new javax.swing.JLabel();
+        writeFileName = new javax.swing.JLabel();
+        readStatus = new javax.swing.JLabel();
+        writeStatus = new javax.swing.JLabel();
 
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
 
         buttonIn.setText("Выбрать входной файл");
+        buttonIn.setToolTipText("Для работы программы необходимо задать входной файл");
         buttonIn.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 buttonInActionPerformed(evt);
@@ -78,6 +117,7 @@ public class MainForm extends JFrame {
         });
 
         buttonOut.setText("Выбрать выходной файл");
+        buttonOut.setToolTipText("Для работы программы необходимо задать выходной файл");
         buttonOut.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 buttonOutActionPerformed(evt);
@@ -88,9 +128,10 @@ public class MainForm extends JFrame {
 
         buferSizeTxt.setHorizontalAlignment(javax.swing.JTextField.CENTER);
         buferSizeTxt.setText("1");
+        buferSizeTxt.setToolTipText("Во время работы программы будет использоваться буфер заданного размера");
 
         startButton.setText("Начать запись");
-        startButton.setToolTipText("Для начала нужно выбрать рабочие файлы");
+        startButton.setToolTipText("Для работы программы необходимо задать входной и выходной файлы");
         startButton.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 startButtonActionPerformed(evt);
@@ -98,17 +139,41 @@ public class MainForm extends JFrame {
         });
 
         readButton.setText("Остановить поток чтения");
-        readButton.setToolTipText("Нельзя управлять потоками, пока не начата запись");
+        readButton.setToolTipText("Данная кнопка управляет состоянием потока чтения во время работы программы");
         readButton.setEnabled(false);
+        readButton.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                readButtonActionPerformed(evt);
+            }
+        });
 
         writeButton.setText("Остановить поток записи");
-        writeButton.setToolTipText("Нельзя управлять потоками, пока не начата запись");
+        writeButton.setToolTipText("Данная кнопка управляет состоянием потока записи во время работы программы");
         writeButton.setEnabled(false);
+        writeButton.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                writeButtonActionPerformed(evt);
+            }
+        });
 
         buferContent.setEditable(false);
         buferContent.setText("Содержимое буфера");
         buferContent.setToolTipText("Здесь отображается наполнение буфера во время работы программы");
         buferContent.setEnabled(false);
+
+        readFileName.setText("Имя файла для чтения");
+        readFileName.setToolTipText("Здесь отображается имя входного файла во время работы программы");
+        readFileName.setEnabled(false);
+
+        writeFileName.setText("Имя файла для записи");
+        writeFileName.setToolTipText("Здесь отображается имя выходного файла во время работы программы");
+        writeFileName.setEnabled(false);
+
+        readStatus.setText("Поток чтения в работе");
+        readStatus.setToolTipText("Статус работы потока чтения");
+
+        writeStatus.setText("Поток записи в работе");
+        writeStatus.setToolTipText("Статус работы потока записи");
 
         javax.swing.GroupLayout layout = new javax.swing.GroupLayout(getContentPane());
         getContentPane().setLayout(layout);
@@ -117,8 +182,6 @@ public class MainForm extends JFrame {
             .addGroup(layout.createSequentialGroup()
                 .addContainerGap()
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                    .addComponent(buttonIn)
-                    .addComponent(buttonOut)
                     .addGroup(layout.createSequentialGroup()
                         .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING, false)
                             .addComponent(buferSizeTxt, javax.swing.GroupLayout.Alignment.LEADING)
@@ -127,18 +190,34 @@ public class MainForm extends JFrame {
                         .addComponent(buferContent, javax.swing.GroupLayout.PREFERRED_SIZE, 182, javax.swing.GroupLayout.PREFERRED_SIZE))
                     .addComponent(startButton)
                     .addGroup(layout.createSequentialGroup()
-                        .addComponent(readButton)
+                        .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                            .addComponent(buttonIn)
+                            .addComponent(buttonOut))
+                        .addGap(33, 33, 33)
+                        .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                            .addComponent(writeFileName)
+                            .addComponent(readFileName)))
+                    .addGroup(layout.createSequentialGroup()
+                        .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING, false)
+                            .addComponent(readStatus, javax.swing.GroupLayout.Alignment.LEADING, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                            .addComponent(readButton, javax.swing.GroupLayout.Alignment.LEADING, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
                         .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                        .addComponent(writeButton)))
-                .addContainerGap(391, Short.MAX_VALUE))
+                        .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING, false)
+                            .addComponent(writeButton, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                            .addComponent(writeStatus, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))))
+                .addContainerGap(51, Short.MAX_VALUE))
         );
         layout.setVerticalGroup(
             layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
             .addGroup(layout.createSequentialGroup()
                 .addContainerGap()
-                .addComponent(buttonIn)
+                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(buttonIn)
+                    .addComponent(readFileName))
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                .addComponent(buttonOut)
+                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(buttonOut)
+                    .addComponent(writeFileName))
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addComponent(jLabel1)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
@@ -151,7 +230,11 @@ public class MainForm extends JFrame {
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(readButton)
                     .addComponent(writeButton))
-                .addContainerGap(123, Short.MAX_VALUE))
+                .addGap(27, 27, 27)
+                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(readStatus)
+                    .addComponent(writeStatus))
+                .addContainerGap(82, Short.MAX_VALUE))
         );
 
         pack();
@@ -164,6 +247,8 @@ public class MainForm extends JFrame {
         }            
         fileIn = fileChooser.getSelectedFile();
         if(fileOut!=null){
+            readFileName.setVisible(true);
+            readFileName.setText(fileIn.getName());
             startButton.setEnabled(true);
         }
     }//GEN-LAST:event_buttonInActionPerformed
@@ -175,22 +260,56 @@ public class MainForm extends JFrame {
         }
         fileOut = fileChooser.getSelectedFile();
         if(fileIn!=null){
+            writeFileName.setVisible(true);
+            writeFileName.setText(fileOut.getName());
             startButton.setEnabled(true);
         }
     }//GEN-LAST:event_buttonOutActionPerformed
 
     private void startButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_startButtonActionPerformed
         changeMode();
-        if(isWrite){
-            Bufer bufer=new Bufer(this, getBuferSize());
-            
-            readThread=new ReadThread(this, bufer, fileIn);
-            writeThread=new WriteThread(this, bufer, fileOut);
-            
-            readThread.start();
-            writeThread.start();
-        }
+        
+        isError=false;
+        
+        stopRead=false;
+        stopWrite=false;
+                
+        bufer=new Bufer(this, getBuferSize());
+
+        readThread=new ReadThread(this, bufer, fileIn);
+        writeThread=new WriteThread(this, bufer, fileOut);
+
+        readThread.start();
+        writeThread.start();
     }//GEN-LAST:event_startButtonActionPerformed
+
+    private void readButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_readButtonActionPerformed
+        stopRead=!stopRead;
+        if(stopRead){
+            readButton.setText("Запустить поток чтения");
+            readStatus.setText("Поток чтения остановлен");
+        }else{
+            readButton.setText("Остановить поток чтения");
+            readStatus.setText("Поток чтения в работе");
+            synchronized(bufer){
+                bufer.notifyAll();
+            }
+        }
+    }//GEN-LAST:event_readButtonActionPerformed
+
+    private void writeButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_writeButtonActionPerformed
+        stopWrite=!stopWrite;
+        if(stopWrite){
+            writeButton.setText("Запустить поток записи");
+            writeStatus.setText("Поток записи остановлен");
+        }else{
+            writeButton.setText("Остановить поток записи");
+            writeStatus.setText("Поток записи в работе");
+            synchronized(bufer){
+                bufer.notifyAll();
+            }
+        }
+    }//GEN-LAST:event_writeButtonActionPerformed
 
     /**
      * Получаем размер буфера
@@ -210,36 +329,29 @@ public class MainForm extends JFrame {
      */
     private void changeMode(){
         isWrite=!isWrite;
-        /**
-         * Во время работы программы не можем поменять файлы
-         */
+
         buttonIn.setEnabled(!isWrite);
         buttonOut.setEnabled(!isWrite);
-        /**
-         * Меняем надпись на стартующей кнопке
-         */
-        if(isWrite){
-            startButton.setText("Прекратить запись");
-        }else{
-            startButton.setText("Начать запись");
-        }
-        /**
-         * Потоками чтения и записи можем управлять только при работающей программе
-         */
+
+        startButton.setEnabled(!isWrite);
+
         readButton.setEnabled(isWrite);
         writeButton.setEnabled(isWrite);
-        //Буфер можем задавать только при неработающей программе
+
         buferSizeTxt.setEnabled(!isWrite);
         
         buferContent.setEnabled(isWrite);
         buferContent.setText("Содержимое буфера");
+        
+        readStatus.setVisible(isWrite);
+        writeStatus.setVisible(isWrite);
     }
     
     /**
      * Запись окончена
      */
     public void finish(){
-        if(isIOEx){
+        if(isError){
             JOptionPane.showMessageDialog(this, "Программа завершена со сбоем!");
         }else{
             JOptionPane.showMessageDialog(this, "Программа завершена успешно!");
@@ -284,7 +396,11 @@ public class MainForm extends JFrame {
     private javax.swing.JButton buttonOut;
     private javax.swing.JLabel jLabel1;
     private javax.swing.JButton readButton;
+    private javax.swing.JLabel readFileName;
+    private javax.swing.JLabel readStatus;
     private javax.swing.JButton startButton;
     private javax.swing.JButton writeButton;
+    private javax.swing.JLabel writeFileName;
+    private javax.swing.JLabel writeStatus;
     // End of variables declaration//GEN-END:variables
 }

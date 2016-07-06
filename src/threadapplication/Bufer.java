@@ -20,17 +20,14 @@ public class Bufer {
      * заполняет буфер
      * @param bufer - что записали
      * @param length - сколько байт записали
+     * @throws java.lang.InterruptedException - при попытке заснуть поток
      */
-    public synchronized void setContainer(byte[] bufer, int length){
+    public synchronized void setContainer(byte[] bufer, int length) throws InterruptedException{
         /**
          * Усыпляем поток чтения, пока не запишутся предыдущие данные 
          */
-        while(isFull){
-            try {
-                wait();
-            } catch (InterruptedException ex) {
-                throw new RuntimeException(ex);
-            }
+        while(isFull || mainForm.getStopRead()){
+            wait();
         }
         isFull=true;
         if(length!=-1){
@@ -46,17 +43,14 @@ public class Bufer {
     /**
      * Возвращает наполнение буфера
      * @return - буфер
+     * @throws java.lang.InterruptedException - при попытке заснуть поток
      */
-    public synchronized Container getContainer(){
+    public synchronized Container getContainer() throws InterruptedException{
         /**
          * Усыпляем поток записи, пока не прочтётся следующая порция информации
          */
-        while(!isFull){
-            try {
-                wait();
-            } catch (InterruptedException ex) {
-                throw new RuntimeException(ex);
-            }
+        while(!isFull || mainForm.getStopWrite()){
+            wait();
         }
         isFull=false;
         mainForm.setBuferContent(null);

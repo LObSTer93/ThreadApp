@@ -2,6 +2,7 @@ package threadapplication;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import javax.swing.JOptionPane;
 
@@ -44,22 +45,34 @@ public class ReadThread extends Thread{
                 FileInputStream is=new FileInputStream(fileIn);
             ){
                 int length;
-                while (((length = is.read(byteBufer))>0) && !mainForm.isIOEx()) {
+                while (((length = is.read(byteBufer))>0) && !mainForm.isError()) {
+                    while(mainForm.getStopRead()){
+                        synchronized(bufer){
+                            bufer.wait();
+                        }
+                    }
                     bufer.setContainer(byteBufer, length);
                 }
-                if(mainForm.isIOEx()){
+                if(mainForm.isError()){
                     mainForm.finish();
                 }else{
                     bufer.setContainer(null, -1);
                 }
+            }catch(InterruptedException e){
+                JOptionPane.showMessageDialog(mainForm, "Сбой при работе с потоком чтения!");
+                throw e;
+            }catch(FileNotFoundException e){
+                JOptionPane.showMessageDialog(mainForm, "Не найден файл для чтения!");
+                throw e;
+            }catch(IOException e){
+                JOptionPane.showMessageDialog(mainForm, "Сбой при чтении файла!");
+                throw e;
+            }catch(Exception e){
+                JOptionPane.showMessageDialog(mainForm, "Неизвестная ошибка!");
+                throw e;
             }
-        }catch(IOException ex){
-            JOptionPane.showMessageDialog(mainForm, "Сбой при чтении файла!");
-            mainForm.setIsIOEx();
-            synchronized(bufer){
-                bufer.setIsFull(true);
-                bufer.notifyAll();
-            }
+        }catch(Exception e){
+            mainForm.setIsError(true, e);
         }
     }
 }

@@ -1,6 +1,7 @@
 package threadapplication;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import javax.swing.JOptionPane;
@@ -42,18 +43,30 @@ public class WriteThread extends Thread{
             try(
                 FileOutputStream os=new FileOutputStream(fileOut);
             ){
-                while((container=bufer.getContainer())!=null && !mainForm.isIOEx()){
+                while((container=bufer.getContainer())!=null && !mainForm.isError()){
                     os.write(container.getBufer(), 0, container.getLength());
+                    while(mainForm.getStopWrite()){
+                        synchronized(bufer){
+                            bufer.wait();
+                        }
+                    }
                 }
                 mainForm.finish();
+            }catch(InterruptedException e){
+                JOptionPane.showMessageDialog(mainForm, "Сбой при работе с потоком записи!");
+                throw e;
+            }catch(FileNotFoundException e){
+                JOptionPane.showMessageDialog(mainForm, "Не найден файл для записи!");
+                throw e;
+            }catch(IOException e){
+                JOptionPane.showMessageDialog(mainForm, "Сбой при чтении файла!");
+                throw e;
+            }catch(Exception e){
+                JOptionPane.showMessageDialog(mainForm, "Неизвестная ошибка!");
+                throw e;
             }
-        }catch(IOException ex){
-            JOptionPane.showMessageDialog(mainForm, "Сбой при записи файла!");
-            mainForm.setIsIOEx();
-            synchronized(bufer){
-                bufer.setIsFull(false);
-                bufer.notifyAll();
-            }
+        }catch(Exception e){
+            mainForm.setIsError(false, e);
         }
     }
 }
